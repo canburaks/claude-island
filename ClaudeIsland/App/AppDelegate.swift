@@ -126,31 +126,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func fetchAndRegisterClaudeVersion() {
-        let claudeProjectsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects")
-
-        guard let projectDirs = try? FileManager.default.contentsOfDirectory(
-            at: claudeProjectsDir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: .skipsHiddenFiles
-        ) else { return }
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let projectsRoots = [
+            homeDir.appendingPathComponent(".claude/projects"),
+            homeDir.appendingPathComponent(".codex/projects")
+        ]
 
         var latestFile: URL?
         var latestDate: Date?
 
-        for projectDir in projectDirs {
-            guard let files = try? FileManager.default.contentsOfDirectory(
-                at: projectDir,
+        for projectsRoot in projectsRoots {
+            guard let projectDirs = try? FileManager.default.contentsOfDirectory(
+                at: projectsRoot,
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: .skipsHiddenFiles
             ) else { continue }
 
-            for file in files where file.pathExtension == "jsonl" && !file.lastPathComponent.hasPrefix("agent-") {
-                if let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
-                   let modDate = attrs.contentModificationDate {
-                    if latestDate == nil || modDate > latestDate! {
-                        latestDate = modDate
-                        latestFile = file
+            for projectDir in projectDirs {
+                guard let files = try? FileManager.default.contentsOfDirectory(
+                    at: projectDir,
+                    includingPropertiesForKeys: [.contentModificationDateKey],
+                    options: .skipsHiddenFiles
+                ) else { continue }
+
+                for file in files where file.pathExtension == "jsonl" && !file.lastPathComponent.hasPrefix("agent-") {
+                    if let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
+                       let modDate = attrs.contentModificationDate {
+                        if latestDate == nil || modDate > latestDate! {
+                            latestDate = modDate
+                            latestFile = file
+                        }
                     }
                 }
             }
