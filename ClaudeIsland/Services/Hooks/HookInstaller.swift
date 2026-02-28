@@ -9,32 +9,33 @@ import Foundation
 
 struct HookInstaller {
 
+    private static let agentHomes = [".claude", ".codex"]
+
     /// Install hook script and update settings.json on app launch
     static func installIfNeeded() {
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude")
-        let hooksDir = claudeDir.appendingPathComponent("hooks")
-        let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
-        let settings = claudeDir.appendingPathComponent("settings.json")
+        guard let bundled = Bundle.main.url(forResource: "claude-island-state", withExtension: "py") else {
+            return
+        }
 
-        try? FileManager.default.createDirectory(
-            at: hooksDir,
-            withIntermediateDirectories: true
-        )
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        for agentHome in agentHomes {
+            let hooksDir = homeDir.appendingPathComponent("\(agentHome)/hooks")
+            let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
+            let settings = homeDir.appendingPathComponent("\(agentHome)/settings.json")
 
-        if let bundled = Bundle.main.url(forResource: "claude-island-state", withExtension: "py") {
+            try? FileManager.default.createDirectory(at: hooksDir, withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: pythonScript)
             try? FileManager.default.copyItem(at: bundled, to: pythonScript)
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o755],
                 ofItemAtPath: pythonScript.path
             )
-        }
 
-        updateSettings(at: settings)
+            updateSettings(at: settings, agentHome: agentHome)
+        }
     }
 
-    private static func updateSettings(at settingsURL: URL) {
+    private static func updateSettings(at settingsURL: URL, agentHome: String) {
         var json: [String: Any] = [:]
         if let data = try? Data(contentsOf: settingsURL),
            let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -42,7 +43,7 @@ struct HookInstaller {
         }
 
         let python = detectPython()
-        let command = "\(python) ~/.claude/hooks/claude-island-state.py"
+        let command = "\(python) ~/\(agentHome)/hooks/claude-island-state.py"
         let hookEntry: [[String: Any]] = [["type": "command", "command": command]]
         let hookEntryWithTimeout: [[String: Any]] = [["type": "command", "command": command, "timeout": 86400]]
         let withMatcher: [[String: Any]] = [["matcher": "*", "hooks": hookEntry]]
@@ -100,24 +101,25 @@ struct HookInstaller {
 
     /// Check if hooks are currently installed
     static func isInstalled() -> Bool {
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude")
-        let settings = claudeDir.appendingPathComponent("settings.json")
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
 
-        guard let data = try? Data(contentsOf: settings),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = json["hooks"] as? [String: Any] else {
-            return false
-        }
+        for agentHome in agentHomes {
+            let settings = homeDir.appendingPathComponent("\(agentHome)/settings.json")
+            guard let data = try? Data(contentsOf: settings),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let hooks = json["hooks"] as? [String: Any] else {
+                continue
+            }
 
-        for (_, value) in hooks {
-            if let entries = value as? [[String: Any]] {
-                for entry in entries {
-                    if let entryHooks = entry["hooks"] as? [[String: Any]] {
-                        for hook in entryHooks {
-                            if let cmd = hook["command"] as? String,
-                               cmd.contains("claude-island-state.py") {
-                                return true
+            for (_, value) in hooks {
+                if let entries = value as? [[String: Any]] {
+                    for entry in entries {
+                        if let entryHooks = entry["hooks"] as? [[String: Any]] {
+                            for hook in entryHooks {
+                                if let cmd = hook["command"] as? String,
+                                   cmd.contains("claude-island-state.py") {
+                                    return true
+                                }
                             }
                         }
                     }
@@ -129,51 +131,52 @@ struct HookInstaller {
 
     /// Uninstall hooks from settings.json and remove script
     static func uninstall() {
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude")
-        let hooksDir = claudeDir.appendingPathComponent("hooks")
-        let pythonScript = hooksDir.appendingPathComponent("claude-island-state.py")
-        let settings = claudeDir.appendingPathComponent("settings.json")
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
 
-        try? FileManager.default.removeItem(at: pythonScript)
+        for agentHome in agentHomes {
+            let pythonScript = homeDir.appendingPathComponent("\(agentHome)/hooks/claude-island-state.py")
+            let settings = homeDir.appendingPathComponent("\(agentHome)/settings.json")
 
-        guard let data = try? Data(contentsOf: settings),
-              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var hooks = json["hooks"] as? [String: Any] else {
-            return
-        }
+            try? FileManager.default.removeItem(at: pythonScript)
 
-        for (event, value) in hooks {
-            if var entries = value as? [[String: Any]] {
-                entries.removeAll { entry in
-                    if let entryHooks = entry["hooks"] as? [[String: Any]] {
-                        return entryHooks.contains { hook in
-                            let cmd = hook["command"] as? String ?? ""
-                            return cmd.contains("claude-island-state.py")
+            guard let data = try? Data(contentsOf: settings),
+                  var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  var hooks = json["hooks"] as? [String: Any] else {
+                continue
+            }
+
+            for (event, value) in hooks {
+                if var entries = value as? [[String: Any]] {
+                    entries.removeAll { entry in
+                        if let entryHooks = entry["hooks"] as? [[String: Any]] {
+                            return entryHooks.contains { hook in
+                                let cmd = hook["command"] as? String ?? ""
+                                return cmd.contains("claude-island-state.py")
+                            }
                         }
+                        return false
                     }
-                    return false
-                }
 
-                if entries.isEmpty {
-                    hooks.removeValue(forKey: event)
-                } else {
-                    hooks[event] = entries
+                    if entries.isEmpty {
+                        hooks.removeValue(forKey: event)
+                    } else {
+                        hooks[event] = entries
+                    }
                 }
             }
-        }
 
-        if hooks.isEmpty {
-            json.removeValue(forKey: "hooks")
-        } else {
-            json["hooks"] = hooks
-        }
+            if hooks.isEmpty {
+                json.removeValue(forKey: "hooks")
+            } else {
+                json["hooks"] = hooks
+            }
 
-        if let data = try? JSONSerialization.data(
-            withJSONObject: json,
-            options: [.prettyPrinted, .sortedKeys]
-        ) {
-            try? data.write(to: settings)
+            if let output = try? JSONSerialization.data(
+                withJSONObject: json,
+                options: [.prettyPrinted, .sortedKeys]
+            ) {
+                try? output.write(to: settings)
+            }
         }
     }
 
