@@ -56,7 +56,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "macos_version": osVersion
         ])
 
-        fetchAndRegisterClaudeVersion()
+        fetchAndRegisterAgentVersion()
 
         Mixpanel.mainInstance().people.set(properties: [
             "app_version": version,
@@ -125,30 +125,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return newId
     }
 
-    private func fetchAndRegisterClaudeVersion() {
-        let claudeProjectsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects")
-
-        guard let projectDirs = try? FileManager.default.contentsOfDirectory(
-            at: claudeProjectsDir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: .skipsHiddenFiles
-        ) else { return }
-
+    private func fetchAndRegisterAgentVersion() {
         var latestFile: URL?
         var latestDate: Date?
 
-        for projectDir in projectDirs {
-            guard let files = try? FileManager.default.contentsOfDirectory(
-                at: projectDir,
+        for platform in AgentPlatform.allCases {
+            let projectsDir = platform.projectsDirectory
+            guard let projectDirs = try? FileManager.default.contentsOfDirectory(
+                at: projectsDir,
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: .skipsHiddenFiles
             ) else { continue }
 
-            for file in files where file.pathExtension == "jsonl" && !file.lastPathComponent.hasPrefix("agent-") {
-                if let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
-                   let modDate = attrs.contentModificationDate {
-                    if latestDate == nil || modDate > latestDate! {
+            for projectDir in projectDirs {
+                guard let files = try? FileManager.default.contentsOfDirectory(
+                    at: projectDir,
+                    includingPropertiesForKeys: [.contentModificationDateKey],
+                    options: .skipsHiddenFiles
+                ) else { continue }
+
+                for file in files where file.pathExtension == "jsonl" && !file.lastPathComponent.hasPrefix("agent-") {
+                    if let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
+                       let modDate = attrs.contentModificationDate,
+                       latestDate == nil || modDate > latestDate! {
                         latestDate = modDate
                         latestFile = file
                     }
@@ -168,8 +167,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
                   let version = json["version"] as? String else { continue }
 
-            Mixpanel.mainInstance().registerSuperProperties(["claude_code_version": version])
-            Mixpanel.mainInstance().people.set(properties: ["claude_code_version": version])
+            Mixpanel.mainInstance().registerSuperProperties([
+                "claude_code_version": version,
+                "codex_cli_version": version
+            ])
+            Mixpanel.mainInstance().people.set(properties: [
+                "claude_code_version": version,
+                "codex_cli_version": version
+            ])
             return
         }
     }
