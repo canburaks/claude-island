@@ -77,10 +77,10 @@ def main():
     except json.JSONDecodeError:
         sys.exit(1)
 
-    session_id = data.get("session_id", "unknown")
-    event = data.get("hook_event_name", "")
-    cwd = data.get("cwd", "")
-    tool_input = data.get("tool_input", {})
+    session_id = data.get("session_id") or data.get("conversation_id", "unknown")
+    event = data.get("hook_event_name") or data.get("event_name") or data.get("event", "")
+    cwd = data.get("cwd") or data.get("working_directory", "")
+    tool_input = data.get("tool_input") or data.get("input") or {}
 
     # Get process info
     claude_pid = os.getppid()
@@ -102,26 +102,26 @@ def main():
 
     elif event == "PreToolUse":
         state["status"] = "running_tool"
-        state["tool"] = data.get("tool_name")
+        state["tool"] = data.get("tool_name") or data.get("tool")
         state["tool_input"] = tool_input
         # Send tool_use_id to Swift for caching
-        tool_use_id_from_event = data.get("tool_use_id")
+        tool_use_id_from_event = data.get("tool_use_id") or data.get("tool_call_id")
         if tool_use_id_from_event:
             state["tool_use_id"] = tool_use_id_from_event
 
     elif event == "PostToolUse":
         state["status"] = "processing"
-        state["tool"] = data.get("tool_name")
+        state["tool"] = data.get("tool_name") or data.get("tool")
         state["tool_input"] = tool_input
         # Send tool_use_id so Swift can cancel the specific pending permission
-        tool_use_id_from_event = data.get("tool_use_id")
+        tool_use_id_from_event = data.get("tool_use_id") or data.get("tool_call_id")
         if tool_use_id_from_event:
             state["tool_use_id"] = tool_use_id_from_event
 
     elif event == "PermissionRequest":
         # This is where we can control the permission
         state["status"] = "waiting_for_approval"
-        state["tool"] = data.get("tool_name")
+        state["tool"] = data.get("tool_name") or data.get("tool")
         state["tool_input"] = tool_input
         # tool_use_id lookup handled by Swift-side cache from PreToolUse
 
