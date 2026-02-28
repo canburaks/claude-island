@@ -119,9 +119,10 @@ actor YabaiController {
                 // Check if this pane has a Claude child with matching cwd
                 for (pid, info) in tree {
                     let isChild = ProcessTreeBuilder.shared.isDescendant(targetPid: pid, ofAncestor: panePid, tree: tree)
-                    let isClaude = info.command.lowercased().contains("claude")
+                    let command = info.command.lowercased()
+                    let isAgentCli = command.contains("claude") || command.contains("codex")
 
-                    guard isChild, isClaude else { continue }
+                    guard isChild, isAgentCli else { continue }
 
                     guard let cwd = ProcessTreeBuilder.shared.getWorkingDirectory(forPid: pid),
                           cwd == workingDir else { continue }
